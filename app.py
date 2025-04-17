@@ -58,7 +58,11 @@ def sms_reply():
     twiml = MessagingResponse()
     twiml.message(reply)
     return Response(str(twiml), mimetype="application/xml")
-
+    
+@app.route("/", methods=["GET"])
+def home():
+    return "AI Call Handler backend is running. Nothing to see here.", 200
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
