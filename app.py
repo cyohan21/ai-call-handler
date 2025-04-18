@@ -130,6 +130,41 @@ def call_status():
 @app.route("/", methods=["GET"])
 def home():
     return "AI Call Handler backend is running. Nothing to see here.", 200
+
+
+
+
+
+# Test Below #
+
+
+@app.route("/test-gpt", methods=["GET"])
+def test_gpt():
+    import openai
+    from dotenv import load_dotenv
+    import os
+
+    load_dotenv()
+    key = os.getenv("OPENAI_API_KEY")
+    print("🔑 API KEY LOADED:", key[:10])  # show first 10 chars
+
+    if not key:
+        return "❌ API key not loaded", 500
+
+    openai.api_key = key
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "Say hi in 3 words"}],
+        )
+        print("✅ GPT Response:", response.choices[0].message.content)
+        return response.choices[0].message.content, 200
+    except Exception as e:
+        print("❌ GPT ERROR:", e)
+        return f"GPT error: {e}", 500
+
+
     
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
