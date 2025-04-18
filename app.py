@@ -4,6 +4,7 @@ from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +14,7 @@ app = Flask(__name__)
 
 # Init Twilio + OpenAI
 twilio_client = Client(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH"))
-OpenAI.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 
 @app.route("/missed-call", methods=["POST"])
