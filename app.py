@@ -37,27 +37,36 @@ def missed_call():
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
-    user_msg = request.form.get("Body")
-    from_number = request.form.get("From")
+    user_msg = request.form.get("Body", "").strip()
+    from_number = request.form.get("From", "").strip()
+
+    if not user_msg:
+        print("Empty or missing user message.")
+        reply = "Sorry, we couldn't understand your message. Please try again."
+        twiml = MessagingResponse()
+        twiml.message(reply)
+        return Response(str(twiml), mimetype="application/xml")
+
+    calendly_link = CALENDLY_LINK or "https://calendly.com/caleb-yohannes2003"
 
     prompt = f"""
-    You are an assistant for a blue-collar business. Use the info below to answer questions.
-    - Services: landscaping, snow removal, garden design, hardscaping
-    - Area: Montreal & Laval
-    - Booking: send this link if asked to book → {CALENDLY_LINK}
-    - Hours: Mon–Sat 8am–6pm
+You are an assistant for a blue-collar business. Use the info below to answer questions.
+- Services: landscaping, snow removal, garden design, hardscaping
+- Area: Montreal & Laval
+- Booking: send this link if asked to book → {calendly_link}
+- Hours: Mon–Sat 8am–6pm
 
-    Customer says: "{user_msg}"
-    """
+Customer says: "{user_msg}"
+"""
+
+    print("Prompt being sent to GPT:\n", prompt)
 
     try:
         completion = openai.chat.completions.create(
-
-
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
-        reply = completion.choices[0].message.content
+        reply = completion.choices[0].message.content.strip()
     except Exception as e:
         print("OpenAI error:", e)
         reply = "Sorry, something went wrong. We'll get back to you shortly."
