@@ -72,8 +72,12 @@ def voice():
     response = VoiceResponse()
     response.say("Please hold while we connect your call.", voice="alice")
 
+    forward_to = os.getenv("FORWARD_TO_NUMBER")
+    if forward_to:
+        response.dial(forward_to)
+    else:
+        response.say("Sorry, we’re currently unavailable to take your call.")
 
-    response.dial(os.getenv("FORWARD_TO_NUMBER")) #FORWARD_TO_NUMBER value in .env file
     return Response(str(response), mimetype="application/xml")
 
 # Sends voicemails to the owner via SMS
