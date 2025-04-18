@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, Response
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -19,16 +20,20 @@ def missed_call():
     from_number = request.form.get("From")
     message = "Hey! Sorry we missed your call. How can we help you today?"
 
+    # Send SMS to caller
     try:
         twilio_client.messages.create(
             body=message,
             from_=os.getenv("TWILIO_NUMBER"),
             to=from_number
         )
-        return ("", 200)
     except Exception as e:
         print("Twilio error:", e)
-        return ("", 500)
+
+    # FIX: Return valid voice TwiML to avoid application error
+    response = VoiceResponse()
+    response.say("Thank you for calling. We’ll text you shortly.", voice="alice")
+    return Response(str(response), mimetype="application/xml")
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
@@ -48,7 +53,7 @@ def sms_reply():
     try:
         completion = openai.chat.completions.create(
 
-            
+
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
@@ -60,6 +65,52 @@ def sms_reply():
     twiml = MessagingResponse()
     twiml.message(reply)
     return Response(str(twiml), mimetype="application/xml")
+
+# Call bridging from twilio number to the owner's number
+@app.route("/voice", methods=["POST"])
+def voice():
+    response = VoiceResponse()
+    response.say("Please hold while we connect your call.", voice="alice")
+
+
+    response.dial(os.getenv("FORWARD_TO_NUMBER")) #FORWARD_TO_NUMBER value in .env file
+    return Response(str(response), mimetype="application/xml")
+
+# Sends voicemails to the owner via SMS
+@app.route("/handle-recording", methods=["POST"])
+def handle_recording():
+    recording_url = request.form.get("RecordingUrl")
+    caller = request.form.get("From")
+
+    try:
+        twilio_client.messages.create(
+            body=f"Voicemail from {caller}: {recording_url}",
+            from_=os.getenv("TWILIO_NUMBER"),
+            to=os.getenv("OWNER_NUMBER")
+        )
+    except Exception as e:
+        print("Voicemail alert error:", e)
+
+    return ("", 200)
+
+
+# Handles early hangups before timeout
+@app.route("/call-status", methods=["POST"])
+def call_status():
+    call_status = request.form.get("CallStatus")
+    from_number = request.form.get("From")
+
+    if call_status in ["no-answer", "busy", "failed", "canceled"]:
+        try:
+            twilio_client.messages.create(
+                body="We noticed you called but didn’t get through. Can we help?",
+                from_=os.getenv("TWILIO_NUMBER"),
+                to=from_number
+            )
+        except Exception as e:
+            print("Early hangup SMS error:", e)
+
+    return ("", 200)
 
 if __name__ == "__main__":
     app.run(port=int(os.environ.get("PORT", 5000)))
