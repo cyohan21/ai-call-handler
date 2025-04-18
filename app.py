@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 # Init Twilio + OpenAI
 twilio_client = Client(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH"))
-openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 
 @app.route("/missed-call", methods=["POST"])
