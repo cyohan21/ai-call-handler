@@ -65,7 +65,6 @@ def sms_reply():
     twiml = MessagingResponse()
     twiml.message(reply)
     return Response(str(twiml), mimetype="application/xml")
-<<<<<<< HEAD
 
 # Call bridging from twilio number to the owner's number
 @app.route("/voice", methods=["POST"])
@@ -113,13 +112,11 @@ def call_status():
 
     return ("", 200)
 
-=======
     
 @app.route("/", methods=["GET"])
 def home():
     return "AI Call Handler backend is running. Nothing to see here.", 200
     
->>>>>>> e21f3852d910ec0891b7be879b9e8b25f19ef5e6
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
