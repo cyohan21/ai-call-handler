@@ -50,7 +50,7 @@ def sms_reply():
 
     calendly_link = CALENDLY_LINK or "https://calendly.com/caleb-yohannes2003"
 
-    prompt = f"""
+    system_msg = f"""
 You are an assistant for a blue-collar business. Use the info below to answer questions.
 - Services: landscaping, snow removal, garden design, hardscaping
 - Area: Montreal & Laval
@@ -61,12 +61,15 @@ You are an assistant for a blue-collar business. Use the info below to answer qu
 Customer says: '{user_msg}'
 """
 
-    print("📩 Prompt to GPT:", prompt)
+    print("📩 Prompt to GPT:", system_msg)
 
     try:
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[
+                {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg}
+            ]
         )
         reply = completion.choices[0].message.content.strip()
     except Exception as e:
