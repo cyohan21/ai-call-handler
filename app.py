@@ -57,8 +57,10 @@ You are an assistant for a blue-collar business. Use the info below to answer qu
 - Booking: send this link if asked to book → {calendly_link}
 - Hours: Mon–Sat 8am–6pm
 
-Customer says: "{user_msg}"
+
+Customer says: '{user_msg}'
 """
+
     print("📩 Prompt to GPT:", prompt)
 
     try:
@@ -141,3 +143,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
