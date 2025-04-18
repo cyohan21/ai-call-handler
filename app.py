@@ -3,7 +3,6 @@ from flask import Flask, request, Response
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
-from openai import OpenAI
 import openai
 from dotenv import load_dotenv
 
