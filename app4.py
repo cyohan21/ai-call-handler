@@ -1,7 +1,6 @@
 import os
 import time
-import requests
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
@@ -35,29 +34,19 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open("AI Conversation Logs")
 
-        # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
-
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
-            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
+            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="5")
+            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Role", "Message"])
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
 
-        # Check if user already exists in this month's sheet
-        records = sheet.get_all_records()
-        for idx, row in enumerate(records, start=2):  # account for header
-            if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
-               str(row['Source']).strip().lower() == str(platform).strip().lower():
-                existing_text = sheet.cell(idx, 4).value or ""
-                sheet.update_cell(idx, 4, existing_text + convo_entry)
-                return
+        # Append messages without clumping — sorted naturally by timestamp
+        sheet.append_row([now, platform, handle, "User", user_msg])
+        sheet.append_row([now, platform, handle, "Assistant", ai_reply])
 
-        # New conversation
-        sheet.append_row([now, platform, handle, convo_entry])
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
 
@@ -76,7 +65,6 @@ def sms_reply():
     print("📩 Message received:", user_msg)
 
     try:
-        # Use persistent thread per user
         if from_number in user_threads:
             thread_id = user_threads[from_number]
         else:
@@ -85,17 +73,17 @@ def sms_reply():
             user_threads[from_number] = thread_id
 
         client.beta.threads.messages.create(
-            thread_id=thread_id,
+            thread_id = thread_id,
             role="user",
             content=user_msg
         )
         run = client.beta.threads.runs.create(
-            thread_id=thread_id,
+            thread_id = thread_id,
             assistant_id=ASSISTANT_ID
         )
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
+                thread_id = thread_id,
                 run_id=run.id
             )
             if run_status.status == "completed":
@@ -104,9 +92,10 @@ def sms_reply():
                 raise Exception(f"Run failed with status: {run_status.status}")
             time.sleep(1)
 
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        messages = client.beta.threads.messages.list(thread_id = thread_id)
         reply = messages.data[0].content[0].text.value.strip()
-        
+
+        # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
 
     except Exception as e:
@@ -116,7 +105,7 @@ def sms_reply():
     twiml = MessagingResponse()
     twiml.message(reply)
     return Response(str(twiml), mimetype="application/xml")
-    
+
 @app.route("/missed-call", methods=["POST"])
 def missed_call():
     from_number = request.form.get("From")
