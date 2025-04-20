@@ -89,93 +89,71 @@ def sms_reply():
             role="user",
             content=user_msg
         )
+        
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
+        
+        # Process the run, handling any required tool calls
         while True:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-            if run_status.status == "completed":
-                break
-            elif run_status.status in ["failed", "cancelled"]:
-                raise Exception(f"Run failed with status: {run_status.status}")
-            time.sleep(1)
-
-        if run_status.status == "requires_action":
-            tool_calls = run_status.required_action.tool_calls
-            for tool in tool_calls:
-                if tool.function.name == "book_appointment":
-                    args = json.loads(tool.function.arguments)
-                    try:
-                        # Call your booking endpoint
-                        booking_res = requests.post(f"{os.getenv('RENDER_URL')}/book-appointment", json=args)
-                        print("📅 Booking response:", booking_res.json())
-
-                        # Inject confirmation back into the thread (optional but smart)
-                        client.beta.threads.messages.create(
+            try:
+                run_status = client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+                
+                if run_status.status == "completed":
+                    break
+                elif run_status.status == "requires_action":
+                    # Handle tool calls and submit outputs
+                    tool_outputs = []
+                    
+                    for tool_call in run_status.required_action.submit_tool_outputs.tool_calls:
+                        tool_call_id = tool_call.id
+                        function_name = tool_call.function.name
+                        function_args = json.loads(tool_call.function.arguments)
+                        
+                        output = None
+                        if function_name == "book_appointment":
+                            try:
+                                booking_res = requests.post(f"{os.getenv('RENDER_URL')}/book-appointment", json=function_args)
+                                output = json.dumps(booking_res.json())
+                            except Exception as e:
+                                output = json.dumps({"error": str(e)})
+                                
+                        elif function_name == "get_slots":
+                            try:
+                                slots_res = requests.post(f"{os.getenv('RENDER_URL')}/available-slots", json=function_args)
+                                output = json.dumps(slots_res.json())
+                            except Exception as e:
+                                output = json.dumps({"error": str(e)})
+                        
+                        if output:
+                            tool_outputs.append({
+                                "tool_call_id": tool_call_id,
+                                "output": output
+                            })
+                    
+                    # Submit all tool outputs back to the run
+                    if tool_outputs:
+                        run = client.beta.threads.runs.submit_tool_outputs(
                             thread_id=thread_id,
-                            role="user",
-                            content=f"Booking confirmed for {args['datetime']}!"
+                            run_id=run.id,
+                            tool_outputs=tool_outputs
                         )
+                    
+                elif run_status.status in ["failed", "cancelled", "expired"]:
+                    raise Exception(f"Run failed with status: {run_status.status}")
+                    
+                # Add timeout and exponential backoff
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"❌ Error during run processing: {e}")
+                raise
 
-                        # Run the assistant again to generate final message
-                        run = client.beta.threads.runs.create(
-                            thread_id=thread_id,
-                            assistant_id=ASSISTANT_ID
-                        )
-                        while True:
-                            run_status = client.beta.threads.runs.retrieve(
-                                thread_id=thread_id,
-                                run_id=run.id
-                            )
-                            if run_status.status == "completed":
-                                break
-                            elif run_status.status in ["failed", "cancelled"]:
-                                raise Exception(f"Run failed with status: {run_status.status}")
-                            time.sleep(1)
-
-                    except Exception as e:
-                        print("❌ Booking error:", e)
-                elif tool.function.name == "get_slots":
-                    args = json.loads(tool.function.arguments)
-                    try:
-                        # Call your available slots endpoint
-                        slots_res = requests.post(f"{os.getenv('RENDER_URL')}/available-slots", json=args)
-                        slots = slots_res.json()
-
-                        # Extract available times (simplified logic)
-                        times = [slot["start_time"] for slot in slots.get("collection", [])[:3]]
-                        readable_times = "\n".join(times) if times else "No available slots found."
-
-                        # Inject response to assistant
-                        client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="user",
-                            content=f"Here are some available times:\n{readable_times}"
-                        )
-
-                        # Re-run assistant to continue convo
-                        run = client.beta.threads.runs.create(
-                            thread_id=thread_id,
-                            assistant_id=ASSISTANT_ID
-                        )
-                        while True:
-                            run_status = client.beta.threads.runs.retrieve(
-                                thread_id=thread_id,
-                                run_id=run.id
-                            )
-                            if run_status.status == "completed":
-                                break
-                            elif run_status.status in ["failed", "cancelled"]:
-                                raise Exception(f"Run failed with status: {run_status.status}")
-                            time.sleep(1)
-
-                    except Exception as e:
-                        print("❌ Slot lookup error:", e)
-
+        # Get the assistant's response
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         reply = messages.data[0].content[0].text.value.strip()
     
