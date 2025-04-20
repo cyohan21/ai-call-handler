@@ -59,7 +59,9 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         sheet.append_row([now, platform, handle, convo_entry])
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
-
+    
+    print("Currently writing to:", sheet.title)
+    
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
     user_msg = request.form.get("Body", "").strip()
