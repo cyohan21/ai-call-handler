@@ -27,6 +27,7 @@ CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 user_threads = {}
 
 # Function to log or update conversation in monthly Google Sheet tab
+# Global dictionary to track when users last interacted
 last_logged_sessions = {}
 
 def log_to_sheet(platform, handle, user_msg, ai_reply):
@@ -58,19 +59,37 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
             if now - last_time > timedelta(minutes=30):  # session timeout
                 new_session = True
 
-        if new_session:
-            sheet.append_row(["", "", "", "", ""])  # blank line
-            sheet.append_row(["", "", "", "", f"🧾 New session with {handle} — {now_str}"])
-
         # Update the session timestamp
         last_logged_sessions[handle] = now
 
-        # Log messages
-        sheet.append_row([now_str, platform, handle, "User", user_msg])
-        sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
+        # Get all existing records to check if this user exists
+        records = sheet.get_all_records()
+        
+        # Check if we need to add a new session marker
+        if new_session:
+            # Add blank line and session marker
+            row_count = len(records) + 2  # +2 for header row and 0-indexing
+            sheet.append_row(["", "", "", "", ""])  # blank line
+            sheet.append_row(["", "", "", "", f"🧾 New session with {handle} — {now_str}"])
+        
+        # Log messages - ensure they're actually added by checking the operation result
+        user_row = sheet.append_row([now_str, platform, handle, "User", user_msg])
+        ai_row = sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
+        
+        # Verify rows were added successfully
+        if not user_row or not ai_row:
+            print("⚠️ Warning: Failed to append rows to spreadsheet")
 
     except Exception as e:
-        print("❌ Error logging to Google Sheets:", e)
+        print(f"❌ Error logging to Google Sheets: {e}")
+        # Add retry logic if needed
+        try:
+            # Simple retry once after a short delay
+            time.sleep(2)
+            sheet.append_row([now_str, platform, handle, "User", user_msg])
+            sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
+        except Exception as retry_error:
+            print(f"❌ Retry also failed: {retry_error}")
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
