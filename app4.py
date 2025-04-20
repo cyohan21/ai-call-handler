@@ -104,9 +104,45 @@ def sms_reply():
                 raise Exception(f"Run failed with status: {run_status.status}")
             time.sleep(1)
 
+        if run_status.status == "requires_action":
+            tool_calls = run_status.required_action.tool_calls
+            for tool in tool_calls:
+                if tool.function.name == "book_appointment":
+                    args = json.loads(tool.function.arguments)
+                    try:
+                        # Call your booking endpoint
+                        booking_res = requests.post("http://localhost:5000/book-appointment", json=args)
+                        print("📅 Booking response:", booking_res.json())
+
+                        # Inject confirmation back into the thread (optional but smart)
+                        client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=f"Booking confirmed for {args['datetime']}!"
+                        )
+
+                        # Run the assistant again to generate final message
+                        run = client.beta.threads.runs.create(
+                            thread_id=thread_id,
+                            assistant_id=ASSISTANT_ID
+                        )
+                        while True:
+                            run_status = client.beta.threads.runs.retrieve(
+                                thread_id=thread_id,
+                                run_id=run.id
+                            )
+                            if run_status.status == "completed":
+                                break
+                            elif run_status.status in ["failed", "cancelled"]:
+                                raise Exception(f"Run failed with status: {run_status.status}")
+                            time.sleep(1)
+
+                    except Exception as e:
+                        print("❌ Booking error:", e)
+
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         reply = messages.data[0].content[0].text.value.strip()
-
+    
         # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
 
