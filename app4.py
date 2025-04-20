@@ -24,6 +24,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 
+# In-memory thread tracking for demo
+user_threads = {}
+
 # Function to log or update conversation in monthly Google Sheet tab
 def log_to_sheet(platform, handle, user_msg, ai_reply):
     try:
@@ -48,7 +51,7 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         records = sheet.get_all_records()
         for idx, row in enumerate(records, start=2):  # account for header
             if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
-   str(row['Source']).strip().lower() == str(platform).strip().lower():
+               str(row['Source']).strip().lower() == str(platform).strip().lower():
                 existing_text = sheet.cell(idx, 4).value or ""
                 sheet.update_cell(idx, 4, existing_text + convo_entry)
                 return
@@ -73,19 +76,26 @@ def sms_reply():
     print("📩 Message received:", user_msg)
 
     try:
-        thread = client.beta.threads.create()
+        # Use persistent thread per user
+        if from_number in user_threads:
+            thread_id = user_threads[from_number]
+        else:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            user_threads[from_number] = thread_id
+
         client.beta.threads.messages.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             role="user",
             content=user_msg
         )
         run = client.beta.threads.runs.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 run_id=run.id
             )
             if run_status.status == "completed":
@@ -94,7 +104,7 @@ def sms_reply():
                 raise Exception(f"Run failed with status: {run_status.status}")
             time.sleep(1)
 
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
         reply = messages.data[0].content[0].text.value.strip()
 
         # Log conversation
