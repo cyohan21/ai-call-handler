@@ -27,13 +27,18 @@ CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 user_threads = {}
 
 # Function to log or update conversation in monthly Google Sheet tab
+last_logged_sessions = {}
+
 def log_to_sheet(platform, handle, user_msg, ai_reply):
+    global last_logged_sessions
+
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open("AI Conversation Logs")
 
+        # Use monthly sheet
         month_name = datetime.now().strftime("%B %Y")
         try:
             sheet = sheet_file.worksheet(month_name)
@@ -41,11 +46,28 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
             sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="5")
             sheet.append_row(["Date/Time", "Source", "Username/Handle", "Role", "Message"])
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%d %H:%M")
 
-        # Append messages without clumping — sorted naturally by timestamp
-        sheet.append_row([now, platform, handle, "User", user_msg])
-        sheet.append_row([now, platform, handle, "Assistant", ai_reply])
+        # Detect if we need to start a new session
+        new_session = False
+        if handle not in last_logged_sessions:
+            new_session = True
+        else:
+            last_time = last_logged_sessions[handle]
+            if now - last_time > timedelta(minutes=30):  # session timeout
+                new_session = True
+
+        if new_session:
+            sheet.append_row(["", "", "", "", ""])  # blank line
+            sheet.append_row(["", "", "", "", f"🧾 New session with {handle} — {now_str}"])
+
+        # Update the session timestamp
+        last_logged_sessions[handle] = now
+
+        # Log messages
+        sheet.append_row([now_str, platform, handle, "User", user_msg])
+        sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
 
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
