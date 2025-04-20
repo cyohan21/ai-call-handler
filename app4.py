@@ -232,6 +232,28 @@ def book_appointment():
             "message": str(e)
         }), 500
 
+@app.route("/available-slots", methods=["POST"])
+def get_slots():
+    data = request.json
+    event_type = os.getenv("CALENDLY_EVENT_TYPE")
+    timezone = data.get("timezone", "America/Toronto")
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('CALENDLY_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "event_type": event_type,
+        "timezone": timezone
+    }
+
+    try:
+        res = requests.post("https://api.calendly.com/availability/event_type_available_times", headers=headers, json=payload)
+        return jsonify(res.json()), res.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/call-status", methods=["POST"])
 def call_status():
     call_status = request.form.get("CallStatus")
