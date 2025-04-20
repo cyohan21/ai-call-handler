@@ -40,7 +40,7 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
+            sheet = sheet_file.add_worksheet(title=month_name, rows="5", cols="4")
             sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -61,7 +61,7 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         print("❌ Error logging to Google Sheets:", e)
     
     print("Currently writing to:", sheet.title)
-    
+
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
     user_msg = request.form.get("Body", "").strip()
