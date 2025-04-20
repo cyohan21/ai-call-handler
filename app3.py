@@ -46,7 +46,8 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         # Check if user already exists in this month's sheet
         records = sheet.get_all_records()
         for idx, row in enumerate(records, start=2):  # account for header
-            if row['Username/Handle'] == handle and row['Source'] == platform:
+            if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
+   str(row['Source']).strip().lower() == str(platform).strip().lower():
                 existing_text = sheet.cell(idx, 4).value or ""
                 sheet.update_cell(idx, 4, existing_text + convo_entry)
                 return
