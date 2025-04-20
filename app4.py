@@ -6,7 +6,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -27,69 +27,48 @@ CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 user_threads = {}
 
 # Function to log or update conversation in monthly Google Sheet tab
-# Global dictionary to track when users last interacted
-last_logged_sessions = {}
-
 def log_to_sheet(platform, handle, user_msg, ai_reply):
-    global last_logged_sessions
-
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open("AI Conversation Logs")
 
-        # Use monthly sheet
+        # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
+
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="5")
-            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Role", "Message"])
+            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
+            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
 
-        now = datetime.now()
-        now_str = now.strftime("%Y-%m-%d %H:%M")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        # Detect if we need to start a new session
-        new_session = False
-        if handle not in last_logged_sessions:
-            new_session = True
-        else:
-            last_time = last_logged_sessions[handle]
-            if now - last_time > timedelta(minutes=30):  # session timeout
-                new_session = True
-
-        # Update the session timestamp
-        last_logged_sessions[handle] = now
-
-        # Get all existing records to check if this user exists
+        # Check if user already exists in this month's sheet
         records = sheet.get_all_records()
-        
-        # Check if we need to add a new session marker
-        if new_session:
-            # Add blank line and session marker
-            row_count = len(records) + 2  # +2 for header row and 0-indexing
-            sheet.append_row(["", "", "", "", ""])  # blank line
-            sheet.append_row(["", "", "", "", f"🧾 New session with {handle} — {now_str}"])
-        
-        # Log messages - ensure they're actually added by checking the operation result
-        user_row = sheet.append_row([now_str, platform, handle, "User", user_msg])
-        ai_row = sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
-        
-        # Verify rows were added successfully
-        if not user_row or not ai_row:
-            print("⚠️ Warning: Failed to append rows to spreadsheet")
+        user_found = False
 
+        for row in enumerate(records, start=2):  # skip header
+            if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
+            str(row['Source']).strip().lower() == str(platform).strip().lower():
+                user_found = True
+                break
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if not user_found:
+            # If this is a new user, add a section header
+            sheet.append_row(["", "", "", "", ""])  # blank spacer row
+            sheet.append_row(["", "", "", "", f"🧾 Conversation with {handle} — {now}"])
+
+        # Always append new row (1 message per row)
+        sheet.append_row([now, platform, handle, "User", user_msg])
+        sheet.append_row([now, platform, handle, "Assistant", ai_reply])
+        sheet.append_row(["", "", "", "", ""])  # blank spacer row
+        
     except Exception as e:
-        print(f"❌ Error logging to Google Sheets: {e}")
-        # Add retry logic if needed
-        try:
-            # Simple retry once after a short delay
-            time.sleep(2)
-            sheet.append_row([now_str, platform, handle, "User", user_msg])
-            sheet.append_row([now_str, platform, handle, "Assistant", ai_reply])
-        except Exception as retry_error:
-            print(f"❌ Retry also failed: {retry_error}")
+        print("❌ Error logging to Google Sheets:", e)
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
