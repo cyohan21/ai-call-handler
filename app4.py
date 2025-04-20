@@ -1,7 +1,7 @@
 import os
 import time
 import requests
-from flask import Flask, request, Response, json, jsonify
+from flask import Flask, request, Response, jsonify
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
@@ -89,74 +89,24 @@ def sms_reply():
             role="user",
             content=user_msg
         )
-        
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
-        
-        # Process the run, handling any required tool calls
         while True:
-            try:
-                run_status = client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-                
-                if run_status.status == "completed":
-                    break
-                elif run_status.status == "requires_action":
-                    # Handle tool calls and submit outputs
-                    tool_outputs = []
-                    
-                    for tool_call in run_status.required_action.submit_tool_outputs.tool_calls:
-                        tool_call_id = tool_call.id
-                        function_name = tool_call.function.name
-                        function_args = json.loads(tool_call.function.arguments)
-                        
-                        output = None
-                        if function_name == "book_appointment":
-                            try:
-                                booking_res = requests.post(f"{os.getenv('RENDER_URL')}/book-appointment", json=function_args)
-                                output = json.dumps(booking_res.json())
-                            except Exception as e:
-                                output = json.dumps({"error": str(e)})
-                                
-                        elif function_name == "get_slots":
-                            try:
-                                slots_res = requests.post(f"{os.getenv('RENDER_URL')}/available-slots", json=function_args)
-                                output = json.dumps(slots_res.json())
-                            except Exception as e:
-                                output = json.dumps({"error": str(e)})
-                        
-                        if output:
-                            tool_outputs.append({
-                                "tool_call_id": tool_call_id,
-                                "output": output
-                            })
-                    
-                    # Submit all tool outputs back to the run
-                    if tool_outputs:
-                        run = client.beta.threads.runs.submit_tool_outputs(
-                            thread_id=thread_id,
-                            run_id=run.id,
-                            tool_outputs=tool_outputs
-                        )
-                    
-                elif run_status.status in ["failed", "cancelled", "expired"]:
-                    raise Exception(f"Run failed with status: {run_status.status}")
-                    
-                # Add timeout and exponential backoff
-                time.sleep(1)
-                
-            except Exception as e:
-                print(f"❌ Error during run processing: {e}")
-                raise
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id,
+                run_id=run.id
+            )
+            if run_status.status == "completed":
+                break
+            elif run_status.status in ["failed", "cancelled"]:
+                raise Exception(f"Run failed with status: {run_status.status}")
+            time.sleep(1)
 
-        # Get the assistant's response
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         reply = messages.data[0].content[0].text.value.strip()
-    
+
         # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
 
@@ -167,7 +117,7 @@ def sms_reply():
     twiml = MessagingResponse()
     twiml.message(reply)
     return Response(str(twiml), mimetype="application/xml")
-
+    
 @app.route("/missed-call", methods=["POST"])
 def missed_call():
     from_number = request.form.get("From")
@@ -281,28 +231,6 @@ def book_appointment():
             "status": "error",
             "message": str(e)
         }), 500
-
-@app.route("/available-slots", methods=["POST"])
-def get_slots():
-    data = request.json
-    event_type = os.getenv("CALENDLY_EVENT_TYPE")
-    timezone = data.get("timezone", "America/Toronto")
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('CALENDLY_API_KEY')}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "event_type": event_type,
-        "timezone": timezone
-    }
-
-    try:
-        res = requests.post("https://api.calendly.com/availability/event_type_available_times", headers=headers, json=payload)
-        return jsonify(res.json()), res.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/call-status", methods=["POST"])
 def call_status():
