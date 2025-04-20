@@ -14,6 +14,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 load_dotenv()
 print("✅ OpenAI KEY LOADED:", os.getenv("OPENAI_API_KEY")[:10])
 
+# Flask app
 app = Flask(__name__)
 
 # Init Twilio + OpenAI
@@ -22,7 +23,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 
-# Memory store for thread IDs per user
+# In-memory thread tracking for demo
 user_threads = {}
 
 # Function to log or update conversation in monthly Google Sheet tab
@@ -33,7 +34,9 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open("AI Conversation Logs")
 
+        # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
+
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
@@ -43,14 +46,16 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
 
+        # Check if user already exists in this month's sheet
         records = sheet.get_all_records()
-        for idx, row in enumerate(records, start=2):
+        for idx, row in enumerate(records, start=2):  # account for header
             if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
-               str(row['Source']).strip().lower() == str(platform).strip().lower():
+   str(row['Source']).strip().lower() == str(platform).strip().lower():
                 existing_text = sheet.cell(idx, 4).value or ""
                 sheet.update_cell(idx, 4, existing_text + convo_entry)
                 return
 
+        # New conversation
         sheet.append_row([now, platform, handle, convo_entry])
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
@@ -76,20 +81,19 @@ def sms_reply():
             thread = client.beta.threads.create()
             thread_id = thread.id
             user_threads[from_number] = thread_id
-
+            
         client.beta.threads.messages.create(
-            thread_id=thread_id,
+            thread_id=thread.id,
             role="user",
             content=user_msg
         )
-
         run = client.beta.threads.runs.create(
-            thread_id=thread_id,
+            thread_id=thread.id,
             assistant_id=ASSISTANT_ID
         )
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
+                thread_id=thread.id,
                 run_id=run.id
             )
             if run_status.status == "completed":
@@ -98,9 +102,10 @@ def sms_reply():
                 raise Exception(f"Run failed with status: {run_status.status}")
             time.sleep(1)
 
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
         reply = messages.data[0].content[0].text.value.strip()
 
+        # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
 
     except Exception as e:
