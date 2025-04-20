@@ -105,15 +105,8 @@ def sms_reply():
             time.sleep(1)
 
         messages = client.beta.threads.messages.list(thread_id=thread_id)
-        reply = None
-        for msg in messages.data:
-            if msg.role == "assistant":
-                reply = msg.content[0].text.value.strip()
-                break
-
-        if not reply:
-            reply = "Sorry, I didn’t catch that. Could you repeat?"
-                # Log conversation to Google Sheets
+        reply = messages.data[0].content[0].text.value.strip()
+        
         log_to_sheet("SMS", from_number, user_msg, reply)
 
     except Exception as e:
