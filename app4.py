@@ -105,9 +105,15 @@ def sms_reply():
             time.sleep(1)
 
         messages = client.beta.threads.messages.list(thread_id=thread_id)
-        reply = messages.data[0].content[0].text.value.strip()
+        reply = None
+        for msg in messages.data:
+            if msg.role == "assistant":
+                reply = msg.content[0].text.value.strip()
+                break
 
-        # Log conversation
+        if not reply:
+            reply = "Sorry, I didn’t catch that. Could you repeat?"
+                # Log conversation to Google Sheets
         log_to_sheet("SMS", from_number, user_msg, reply)
 
     except Exception as e:
@@ -163,74 +169,6 @@ def handle_recording():
         print("Voicemail alert error:", e)
 
     return ("", 200)
-
-@app.route("/book-appointment", methods=["POST"])
-def book_appointment():
-    data = request.json
-
-    # Required fields
-    required_fields = ["name", "email", "phone", "budget", "service", "location"]
-    missing = [field for field in required_fields if not data.get(field)]
-
-    if missing:
-        return jsonify({
-            "status": "error",
-            "message": f"Missing required fields: {', '.join(missing)}"
-        }), 400
-
-    name = data["name"]
-    email = data["email"]
-    phone = data["phone"]
-    budget = data["budget"]
-    service = data["service"]
-    location = data["location"]
-    datetime_str = data.get("datetime")  # ISO 8601 format e.g. "2025-04-24T14:00:00Z"
-
-    if not datetime_str:
-        return jsonify({
-            "status": "error",
-            "message": "Missing datetime in ISO 8601 format."
-        }), 400
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('CALENDLY_API_KEY')}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "invitee": {
-            "email": email,
-            "name": name
-        },
-        "event_type": os.getenv("CALENDLY_EVENT_TYPE"),
-        "start_time": datetime_str,
-        "questions_and_answers": [
-            {"question": "Phone Number", "answer": phone},
-            {"question": "Budget", "answer": budget},
-            {"question": "Service Requested", "answer": service},
-            {"question": "Location", "answer": location}
-        ]
-    }
-
-    try:
-        response = requests.post("https://api.calendly.com/scheduled_events", headers=headers, json=payload)
-        if response.status_code == 201:
-            return jsonify({
-                "status": "booked",
-                "message": "Appointment successfully scheduled."
-            }), 201
-        else:
-            print("❌ Calendly booking error:", response.text)
-            return jsonify({
-                "status": "error",
-                "message": response.json().get("message", "Failed to book appointment.")
-            }), 400
-    except Exception as e:
-        print("❌ API error:", e)
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
 
 @app.route("/call-status", methods=["POST"])
 def call_status():
