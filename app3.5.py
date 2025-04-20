@@ -43,6 +43,9 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
             sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
             sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
 
+        if not sheet.row_values(1):
+            sheet.update('A1:D1', [["Date/Time", "Source", "Username/Handle", "Conversation"]])
+            
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
 
