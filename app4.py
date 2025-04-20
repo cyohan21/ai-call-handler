@@ -29,46 +29,46 @@ user_threads = {}
 # Function to log or update conversation in monthly Google Sheet tab
 def log_to_sheet(platform, handle, user_msg, ai_reply):
     try:
+        print("🔧 Starting log_to_sheet")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open("AI Conversation Logs")
 
-        # Determine current month sheet name
+        # Sheet tab: April 2025, May 2025, etc.
         month_name = datetime.now().strftime("%B %Y")
-
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
+            print("🟡 Worksheet not found — creating it.")
             sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
-            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
+
+        # ✅ Guarantee the header exists
+        header = sheet.row_values(1)
+        expected = ["Date/Time", "Source", "Username/Handle", "Conversation"]
+        if header != expected:
+            print("🔧 Adding headers...")
+            sheet.update('A1:D1', [expected])
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
 
-        # Check if user already exists in this month's sheet
+        # Check for existing row match
         records = sheet.get_all_records()
-        user_found = False
+        for idx, row in enumerate(records, start=2):  # row 1 is header
+            if str(row.get('Username/Handle', '')).strip().lower() == handle.strip().lower() and \
+               str(row.get('Source', '')).strip().lower() == platform.strip().lower():
+                existing_text = sheet.cell(idx, 4).value or ""
+                sheet.update_cell(idx, 4, existing_text + convo_entry)
+                print(f"✅ Updated existing row {idx} for {handle}")
+                return
 
-        for row in enumerate(records, start=2):  # skip header
-            if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
-            str(row['Source']).strip().lower() == str(platform).strip().lower():
-                user_found = True
-                break
+        # Append new row
+        print("📌 Appending new row to sheet")
+        sheet.append_row([now, platform, handle, convo_entry])
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        if not user_found:
-            # If this is a new user, add a section header
-            sheet.append_row(["", "", "", "", ""])  # blank spacer row
-            sheet.append_row(["", "", "", "", f"🧾 Conversation with {handle} — {now}"])
-
-        # Always append new row (1 message per row)
-        sheet.append_row([now, platform, handle, "User", user_msg])
-        sheet.append_row([now, platform, handle, "Assistant", ai_reply])
-        sheet.append_row(["", "", "", "", ""])  # blank spacer row
-        
     except Exception as e:
-        print("❌ Error logging to Google Sheets:", e)
+        print("❌ Google Sheets logging failed:", e)
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
