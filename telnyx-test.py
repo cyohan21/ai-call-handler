@@ -57,14 +57,33 @@ telnyx.api_key = os.getenv("TELNYX_API_KEY")
 
 def send_sms(to_number, message):
     try:
+        telnyx_number = os.getenv("TELNYX_NUMBER")
+        
+        print("📨 send_sms() called!")
+        print("🔑 TELNYX_NUMBER:", telnyx_number)
+        print("📞 To:", to_number)
+        print("💬 Message:", message)
+
+        # Sanity checks
+        if not telnyx_number:
+            raise ValueError("TELNYX_NUMBER is missing from environment variables.")
+        if not to_number:
+            raise ValueError("Recipient phone number (to_number) is missing.")
+        if not message:
+            raise ValueError("Message content is empty.")
+
+        # Send via SDK
         response = telnyx.Message.create(
-            from_=os.getenv("TELNYX_NUMBER"),
+            from_=telnyx_number,
             to=to_number,
             text=message
         )
-        print("📤 Telnyx SDK Response:", response)
+
+        print("✅ Telnyx message sent!")
+        print("📤 Telnyx Response:", response.to_dict())
+
     except Exception as e:
-        print("❌ Telnyx SDK Error:", str(e))
+        print("❌ send_sms() FAILED:", str(e))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
