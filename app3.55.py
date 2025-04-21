@@ -107,8 +107,26 @@ def sms_reply():
             time.sleep(1)
 
         messages = client.beta.threads.messages.list(thread_id = thread_id)
-        reply = messages.data[-1].content[0].text.value.strip()
-        print("🤖 AI reply generated:", reply) 
+        if not messages.data:
+            raise Exception("No messages returned from thread.")
+
+# Find the latest assistant message that has text content
+        reply = None
+        for msg in messages.data:
+            if msg.role == "assistant" and msg.content:
+                for part in msg.content:
+                    if part.type == "text":
+                        reply = part.text.value.strip()
+                        break
+            if reply:
+                break
+
+        if not reply:
+            raise Exception("No assistant reply found in thread messages.")
+
+        print("🤖 AI reply generated:", reply)
+        log_to_sheet("SMS", from_number, user_msg, reply)
+        print("📄 log_to_sheet() was triggered.")
 
         # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
