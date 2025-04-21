@@ -5,3 +5,4 @@ python-dotenv
 gspread
 oauth2client
 telnyx==2.1.5
+gspread-formatting
