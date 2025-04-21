@@ -1,14 +1,26 @@
-from flask import Flask, request
+# telnyx-test.py
+
+from dotenv import load_dotenv
+load_dotenv()   # ← MUST come first, before any os.getenv()
+
 import os
+from flask import Flask, request
 from openai import OpenAI
 import telnyx
-from dotenv import load_dotenv
-load_dotenv()
 
 app = Flask(__name__)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-telnyx.api_key = os.getenv("TELNYX_API_KEY")
 
+# Now these pick up values from .env / Render’s environment
+OPENAI_KEY  = os.getenv("OPENAI_API_KEY")
+TELNYX_KEY  = os.getenv("TELNYX_API_KEY")
+TELNYX_NUM  = os.getenv("TELNYX_NUMBER")
+
+print("🔐 Loaded OPENAI_API_KEY:", bool(OPENAI_KEY))
+print("🔐 Loaded TELNYX_API_KEY:", bool(TELNYX_KEY))
+print("🔐 Loaded TELNYX_NUMBER:", TELNYX_NUM)
+
+client = OpenAI(api_key=OPENAI_KEY)
+telnyx.api_key = TELNYX_KEY
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
@@ -18,6 +30,8 @@ def home():
 def sms_handler():
     print("📩 RAW BODY:", request.data)
     print("📩 HEADERS:", dict(request.headers))
+
+    # Try JSON
     try:
         data = request.get_json(force=True)
         print("📨 Parsed JSON:", data)
@@ -26,70 +40,57 @@ def sms_handler():
         return "Bad JSON", 400
 
     payload = data.get("data", {}).get("payload", {})
-    incoming_message = payload.get("text")
-    from_number = payload.get("from")
+    text   = payload.get("text")
+    sender = payload.get("from")
 
-    print("🧪 Debug: payload =", payload)
-    print("🧪 text =", incoming_message)
-    print("🧪 from =", from_number)
+    print("🧪 payload keys:", list(payload.keys()))
+    print("🧪 text:", text)
+    print("🧪 from:", sender)
 
-    print(f"📩 Message: {incoming_message}")
-    print(f"📱 From: {from_number}")
+    if not text or not sender:
+        print("⚠️ Missing text or sender")
+        return "Missing data", 400
 
-    if not incoming_message or not from_number:
-        print("⚠️ Missing text or sender in payload")
-        return "Missing message or number", 400
-
-    # AI response generation
+    # Generate AI reply
     try:
-        response = client.chat.completions.create(
+        resp = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": incoming_message}],
+            messages=[{"role":"user","content": text}],
             temperature=0.7,
         )
-        reply = response.choices[0].message.content.strip()
+        reply = resp.choices[0].message.content.strip()
         print("🤖 AI Reply:", reply)
     except Exception as e:
-        print("❌ OpenAI Error:", str(e))
-        return "OpenAI failed", 500
+        print("❌ OpenAI error:", e)
+        return "OpenAI error", 500
 
-    # Send SMS reply
-    try:
-        print("🧠 About to call send_sms with:", from_number, reply)
-        send_sms(from_number, reply)
-    except Exception as e:
-        print("❌ Telnyx send error:", str(e))
-        return "Send failed", 500
-
+    # Send SMS
+    print("🧠 Calling send_sms…")
+    send_sms(sender, reply)
     return "OK", 200
 
 def send_sms(to_number, message):
+    print("📨 send_sms() called")
+    print("🔑 TELNYX_NUMBER:", TELNYX_NUM)
+    print("📞 To:", to_number)
+    print("💬 Message:", message)
+
+    if not TELNYX_KEY:
+        print("❌ Missing TELNYX_API_KEY")
+        return
+    if not TELNYX_NUM:
+        print("❌ Missing TELNYX_NUMBER")
+        return
+
     try:
-        telnyx_number = os.getenv("TELNYX_NUMBER")
-
-        print("📨 send_sms() called!")
-        print("🔑 TELNYX_NUMBER:", telnyx_number)
-        print("📞 To:", to_number)
-        print("💬 Message:", message)
-
-        if not telnyx_number:
-            raise ValueError("TELNYX_NUMBER is missing from environment variables.")
-        if not to_number:
-            raise ValueError("Recipient phone number (to_number) is missing.")
-        if not message:
-            raise ValueError("Message content is empty.")
-
-        response = telnyx.Message.create(
-            from_=telnyx_number,
+        res = telnyx.Message.create(
+            from_=TELNYX_NUM,
             to=to_number,
             text=message
         )
-
-        print("✅ Telnyx message sent!")
-        print("📤 Telnyx SDK Response:", response.to_dict())
-
+        print("✅ Telnyx send response:", res.to_dict())
     except Exception as e:
-        print("❌ send_sms() FAILED:", str(e))
+        print("❌ send_sms() error:", e)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
