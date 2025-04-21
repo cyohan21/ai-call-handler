@@ -3,11 +3,12 @@ import os
 from openai import OpenAI
 import telnyx
 from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 telnyx.api_key = os.getenv("TELNYX_API_KEY")
-load_dotenv()
+
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
