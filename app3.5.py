@@ -32,7 +32,7 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
-        sheet_file = gclient.open("AI Conversation Logs")
+        sheet_file = gclient.open("AI Logs Tracker")
 
         # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
