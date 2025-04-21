@@ -1,7 +1,7 @@
 # telnyx-test.py
 
 from dotenv import load_dotenv
-load_dotenv()   # ← MUST come first, before any os.getenv()
+load_dotenv()   # ← load .env before any getenv()
 
 import os
 from flask import Flask, request
@@ -10,15 +10,17 @@ import telnyx
 
 app = Flask(__name__)
 
-# Now these pick up values from .env / Render’s environment
-OPENAI_KEY  = os.getenv("OPENAI_API_KEY")
-TELNYX_KEY  = os.getenv("TELNYX_API_KEY")
-TELNYX_NUM  = os.getenv("TELNYX_NUMBER")
+# Load keys from environment
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+TELNYX_KEY = os.getenv("TELNYX_API_KEY")
+TELNYX_NUM = os.getenv("TELNYX_NUMBER")
 
-print("🔐 Loaded OPENAI_API_KEY:", bool(OPENAI_KEY))
-print("🔐 Loaded TELNYX_API_KEY:", bool(TELNYX_KEY))
+# Startup sanity check
+print("🔐 Loaded OPENAI_API_KEY?:", bool(OPENAI_KEY))
+print("🔐 Loaded TELNYX_API_KEY?:", bool(TELLYX_KEY := TELNYX_KEY))
 print("🔐 Loaded TELNYX_NUMBER:", TELNYX_NUM)
 
+# Initialize clients
 client = OpenAI(api_key=OPENAI_KEY)
 telnyx.api_key = TELNYX_KEY
 
@@ -28,10 +30,11 @@ def home():
 
 @app.route("/sms-handler", methods=["POST"])
 def sms_handler():
+    # Dump raw request for inspection
     print("📩 RAW BODY:", request.data)
     print("📩 HEADERS:", dict(request.headers))
 
-    # Try JSON
+    # Parse JSON
     try:
         data = request.get_json(force=True)
         print("📨 Parsed JSON:", data)
@@ -39,23 +42,29 @@ def sms_handler():
         print("❌ JSON parse failed:", e)
         return "Bad JSON", 400
 
+    # Drill into payload
     payload = data.get("data", {}).get("payload", {})
-    text   = payload.get("text")
-    sender = payload.get("from")
-
     print("🧪 payload keys:", list(payload.keys()))
-    print("🧪 text:", text)
-    print("🧪 from:", sender)
 
-    if not text or not sender:
-        print("⚠️ Missing text or sender")
+    # Extract text and sender
+    incoming_message = payload.get("text")
+    from_number = payload.get("from", {}).get("phone_number")
+
+    print("🧪 text:", incoming_message)
+    print("🧪 from (phone_number):", from_number)
+
+    if not incoming_message or not from_number:
+        print("⚠️ Missing text or sender in payload")
         return "Missing data", 400
+
+    print("📩 Message:", incoming_message)
+    print("📱 From:", from_number)
 
     # Generate AI reply
     try:
         resp = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role":"user","content": text}],
+            messages=[{"role": "user", "content": incoming_message}],
             temperature=0.7,
         )
         reply = resp.choices[0].message.content.strip()
@@ -64,9 +73,9 @@ def sms_handler():
         print("❌ OpenAI error:", e)
         return "OpenAI error", 500
 
-    # Send SMS
-    print("🧠 Calling send_sms…")
-    send_sms(sender, reply)
+    # Send SMS back
+    print("🧠 Calling send_sms()…")
+    send_sms(from_number, reply)
     return "OK", 200
 
 def send_sms(to_number, message):
