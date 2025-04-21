@@ -26,50 +26,36 @@ CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 # Function to log or update conversation in monthly Google Sheet tab
 def log_to_sheet(platform, handle, user_msg, ai_reply):
     try:
-        # — auth
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            "google-credentials.json", scope
-        )
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
         sheet_file = gclient.open_by_key(os.getenv("SPREADSHEET_ID"))
 
-        # — ensure monthly tab
+        # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
+
         try:
             sheet = sheet_file.worksheet(month_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = sheet_file.add_worksheet(
-                title=month_name, rows="1000", cols="4"
-            )
-            # header row
-            sheet.append_row(
-                ["Date/Time", "Source", "Username/Handle", "Conversation"]
-            )
+            sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
+            sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
 
-        # — read existing handles this month
+        # Check if user already exists in this month's sheet
         records = sheet.get_all_records()
-        existing = {row["Username/Handle"].strip().lower() for row in records}
+        for idx, row in enumerate(records, start=2):  # account for header
+            if str(row['Username/Handle']).strip().lower() == str(handle).strip().lower() and \
+   str(row['Source']).strip().lower() == str(platform).strip().lower():
+                existing_text = sheet.cell(idx, 4).value or ""
+                sheet.update_cell(idx, 4, existing_text + convo_entry)
+                return
 
-        # — if first time this handle appears, insert a section header
-        if handle.strip().lower() not in existing:
-            sheet.append_row(
-                [now, platform, handle, f"🟢 New conversation with {handle}"]
-            )
-
-        # — append the user’s message
-        sheet.append_row([now, platform, handle, f"User: {user_msg}"])
-        # — append the AI’s reply
-        sheet.append_row([now, platform, handle, f"AI: {ai_reply}"])
-
+        # New conversation
+        sheet.append_row([now, platform, handle, convo_entry])
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
-        # swallow so your SMS still goes through
 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
