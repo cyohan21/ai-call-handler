@@ -17,6 +17,20 @@ print("✅ OpenAI KEY LOADED:", os.getenv("OPENAI_API_KEY")[:10])
 # Flask app
 app = Flask(__name__)
 
+import sys
+
+@app.route("/ping", methods=["POST"])
+def ping():
+    print("🏓 PING received")
+    sys.stdout.flush()
+    return "pong", 200
+
+@app.route("/", methods=["GET"])
+def home():
+    print("🏠 Home endpoint hit")
+    sys.stdout.flush()
+    return "AI Call Handler backend is running. Nothing to see here.", 200
+
 # Init Twilio + OpenAI
 twilio_client = Client(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -64,8 +78,11 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         print("❌ Error logging to Google Sheets:", e)
         raise
 
+import sys 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
+    print("📩 [sms-reply] triggered")
+    sys.stdout.flush()
     user_msg = request.form.get("Body", "").strip()
     from_number = request.form.get("From", "").strip()
 
@@ -127,10 +144,6 @@ def sms_reply():
         print("🤖 AI reply generated:", reply)
         log_to_sheet("SMS", from_number, user_msg, reply)
         print("📄 log_to_sheet() was triggered.")
-
-        # Log conversation
-        log_to_sheet("SMS", from_number, user_msg, reply)
-        print("📄 log_to_sheet() was triggered.") 
 
     except Exception as e:
         print("❌ OpenAI error:", e)
