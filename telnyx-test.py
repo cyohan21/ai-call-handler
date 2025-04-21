@@ -51,7 +51,7 @@ def sms_handler():
         return "OK", 200
 
     # Extract payload details
-    payload = data.get("data", {}).get("payload", {})
+    payload = data["data"]["payload"]
     incoming_message = payload.get("text")
     from_number      = payload.get("from", {}).get("phone_number")
 
@@ -62,9 +62,10 @@ def sms_handler():
         print("⚠️ Missing text or sender in payload")
         return "Missing data", 400
 
-    # Call your OpenAI custom assistant
+    # Call your OpenAI custom assistant with GPT-3.5 Turbo
     try:
         resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
             assistant_id=OPENAI_ASSISTANT_ID,
             messages=[{"role":"user","content": incoming_message}]
         )
