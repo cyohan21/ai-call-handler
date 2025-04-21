@@ -4,4 +4,4 @@ openai
 python-dotenv
 gspread
 oauth2client
-telnyx==2.11.0
+telnyx==2.1.5
