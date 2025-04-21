@@ -17,37 +17,19 @@ print("✅ OpenAI KEY LOADED:", os.getenv("OPENAI_API_KEY")[:10])
 # Flask app
 app = Flask(__name__)
 
-import sys
-
-@app.route("/ping", methods=["POST"])
-def ping():
-    print("🏓 PING received")
-    sys.stdout.flush()
-    return "pong", 200
-
-@app.route("/", methods=["GET"])
-def home():
-    print("🏠 Home endpoint hit")
-    sys.stdout.flush()
-    return "AI Call Handler backend is running. Nothing to see here.", 200
-
 # Init Twilio + OpenAI
 twilio_client = Client(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 CALENDLY_LINK = os.getenv("CALENDLY_LINK")
 
-# In-memory thread tracking for demo
-user_threads = {}
-
 # Function to log or update conversation in monthly Google Sheet tab
 def log_to_sheet(platform, handle, user_msg, ai_reply):
-    print("🚨 log_to_sheet() was called")
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
-        sheet_file = gclient.open("AI Conversation Logs")
+        sheet_file = gclient.open_by_key(os.getenv("SPREADSHEET_ID"))
 
         # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
@@ -57,8 +39,6 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         except gspread.exceptions.WorksheetNotFound:
             sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
             sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
-        print("🔍 Connected to sheet:", sheet.title)
-        print("🔍 Headers found:", sheet.row_values(1))
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
@@ -76,13 +56,9 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         sheet.append_row([now, platform, handle, convo_entry])
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
-        raise
 
-import sys 
 @app.route("/sms-reply", methods=["POST"])
 def sms_reply():
-    print("📩 [sms-reply] triggered")
-    sys.stdout.flush()
     user_msg = request.form.get("Body", "").strip()
     from_number = request.form.get("From", "").strip()
 
@@ -96,25 +72,19 @@ def sms_reply():
     print("📩 Message received:", user_msg)
 
     try:
-        if from_number in user_threads:
-            thread_id = user_threads[from_number]
-        else:
-            thread = client.beta.threads.create()
-            thread_id = thread.id
-            user_threads[from_number] = thread_id
-
+        thread = client.beta.threads.create()
         client.beta.threads.messages.create(
-            thread_id = thread_id,
+            thread_id=thread.id,
             role="user",
             content=user_msg
         )
         run = client.beta.threads.runs.create(
-            thread_id = thread_id,
+            thread_id=thread.id,
             assistant_id=ASSISTANT_ID
         )
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id = thread_id,
+                thread_id=thread.id,
                 run_id=run.id
             )
             if run_status.status == "completed":
@@ -123,27 +93,11 @@ def sms_reply():
                 raise Exception(f"Run failed with status: {run_status.status}")
             time.sleep(1)
 
-        messages = client.beta.threads.messages.list(thread_id = thread_id)
-        if not messages.data:
-            raise Exception("No messages returned from thread.")
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        reply = messages.data[0].content[0].text.value.strip()
 
-# Find the latest assistant message that has text content
-        reply = None
-        for msg in messages.data:
-            if msg.role == "assistant" and msg.content:
-                for part in msg.content:
-                    if part.type == "text":
-                        reply = part.text.value.strip()
-                        break
-            if reply:
-                break
-
-        if not reply:
-            raise Exception("No assistant reply found in thread messages.")
-
-        print("🤖 AI reply generated:", reply)
+        # Log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
-        print("📄 log_to_sheet() was triggered.")
 
     except Exception as e:
         print("❌ OpenAI error:", e)
