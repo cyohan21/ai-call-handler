@@ -21,7 +21,9 @@ app = Flask(__name__)
 twilio_client = Client(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
-CALENDLY_LINK = os.getenv("CALENDLY_LINK")
+
+# In-memory thread mapping for conversational memory
+user_threads = {}
 
 # Function to log conversation in monthly Google Sheet tab
 def log_to_sheet(platform, handle, user_msg, ai_reply):
@@ -90,31 +92,56 @@ def sms_reply():
     print("📩 Message received:", user_msg)
 
     try:
-        thread = client.beta.threads.create()
+        # conversational memory: reuse or create thread per user
+        if from_number in user_threads:
+            thread_id = user_threads[from_number]
+            print(f"↪️ Continuing thread for {from_number}: {thread_id}")
+        else:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            user_threads[from_number] = thread_id
+            print(f"🆕 Created thread for {from_number}: {thread_id}")
+
+        # send user message to thread
         client.beta.threads.messages.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             role="user",
             content=user_msg
         )
+        # run assistant
         run = client.beta.threads.runs.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
+        # wait for completion
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 run_id=run.id
             )
             if run_status.status == "completed":
                 break
             elif run_status.status in ["failed", "cancelled"]:
-                raise Exception(f"Run failed with status: {run_status.status}")
+                raise Exception(f"Run failed: {run_status.status}")
             time.sleep(1)
 
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
-        reply = messages.data[0].content[0].text.value.strip()
+        # fetch messages and get latest assistant reply
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        # find last assistant message
+        reply = None
+        for msg in reversed(messages.data):
+            if msg.role == "assistant":
+                for part in msg.content:
+                    if getattr(part, 'type', '') == "text":
+                        reply = part.text.value.strip()
+                        break
+            if reply:
+                break
+        if not reply:
+            raise Exception("No assistant reply found.")
+        print("🤖 AI reply generated:", reply)
 
-        # Log conversation
+        # log conversation
         log_to_sheet("SMS", from_number, user_msg, reply)
 
     except Exception as e:
