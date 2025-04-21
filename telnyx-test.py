@@ -11,8 +11,17 @@ def home():
 
 @app.route("/sms-handler", methods=["POST"])
 def sms_handler():
-    incoming_message = request.form.get("text", "")
-    from_number = request.form.get("from", "")
+    data = request.get_json()
+    print("📨 Webhook payload:", data)  # <-- Log it to Render for debugging
+
+    incoming_message = data.get("data", {}).get("payload", {}).get("text", "")
+    from_number = data.get("data", {}).get("payload", {}).get("from", "")
+
+    print("📩 Incoming message:", incoming_message)
+    print("📱 From number:", from_number)
+
+    if not incoming_message or not from_number:
+        return "Missing message or number", 400
 
     # Generate AI response
     response = client.chat.completions.create(
@@ -22,10 +31,9 @@ def sms_handler():
     )
     reply = response.choices[0].message.content
 
-    # Send reply using Telnyx
     send_sms(from_number, reply)
 
-    return "", 200
+    return "OK", 200
 
 def send_sms(to_number, message):
     import requests
