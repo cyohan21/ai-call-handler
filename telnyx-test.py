@@ -7,6 +7,7 @@ import os
 from flask import Flask, request
 from openai import OpenAI
 import telnyx
+import time
 
 app = Flask(__name__)
 
@@ -14,11 +15,8 @@ app = Flask(__name__)
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 TELNYX_KEY = os.getenv("TELNYX_API_KEY")
 TELNYX_NUM = os.getenv("TELNYX_NUMBER")
-
-# Startup checks
-print("🔐 OPENAI_API_KEY loaded?:", bool(OPENAI_KEY))
-print("🔐 TELNYX_API_KEY loaded?:", bool(TELNYX_KEY))
-print("🔐 TELNYX_NUMBER:", TELNYX_NUM)
+# Load the Assistant ID so we can target a specific fine-tuned or custom assistant
+ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 
 # Initialize clients
 client = OpenAI(api_key=OPENAI_KEY)
@@ -30,7 +28,7 @@ def home():
 
 @app.route("/sms-handler", methods=["POST"])
 def sms_handler():
-    # Log raw request
+    # Log raw request for debugging
     print("📩 RAW BODY:", request.data)
     print("📩 HEADERS:", dict(request.headers))
 
@@ -42,41 +40,64 @@ def sms_handler():
         print("❌ JSON parse failed:", e)
         return "Bad JSON", 400
 
-    # Only handle inbound message received events
     event_type = data.get("data", {}).get("event_type")
     if event_type != "message.received":
         print("⏭ Skipping non-inbound event_type:", event_type)
         return "OK", 200
 
     payload = data["data"]["payload"]
-    # Ensure payload direction is inbound
     if payload.get("direction") != "inbound":
         print("⏭ Skipping non-inbound payload direction:", payload.get("direction"))
         return "OK", 200
 
-    # Extract message and sender
     incoming_message = payload.get("text")
     from_number      = payload.get("from", {}).get("phone_number")
-    print("🧪 Incoming text:", incoming_message)
-    print("🧪 From number:", from_number)
-
     if not incoming_message or not from_number:
         print("⚠️ Missing text or from_number")
         return "Missing data", 400
 
-    # Call OpenAI Chat Completion (GPT-3.5 Turbo)
+    print("🧪 Incoming text:", incoming_message)
+    print("🧪 From number:", from_number)
+
+    # Generate AI reply using beta threads + assistant_id
     try:
-        resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role":"user","content": incoming_message}]
+        # Create a new thread and send the user message
+        thread = client.beta.threads.create()
+        thread_id = thread.id
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=incoming_message
         )
-        reply = resp.choices[0].message.content.strip()
+
+        # Run the assistant
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID
+        )
+
+        # Poll until complete
+        while True:
+            status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id,
+                run_id=run.id
+            )
+            if status.status == "completed":
+                break
+            if status.status in ["failed", "cancelled"]:
+                raise Exception(f"Run failed: {status.status}")
+            time.sleep(1)
+
+        # Retrieve the assistant's reply
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        reply = messages.data[0].content[0].text.value.strip()
         print("🤖 AI Reply:", reply)
+
     except Exception as e:
         print("❌ OpenAI error:", e)
-        return "OpenAI error", 500
+        reply = "Sorry, something went wrong generating that response."
 
-    # Send SMS reply
+    # Send SMS via Telnyx
     send_sms(from_number, reply)
     return "OK", 200
 
@@ -85,7 +106,6 @@ def send_sms(to_number, message):
     if not TELNYX_KEY or not TELNYX_NUM:
         print("❌ Missing TELNYX credentials")
         return
-
     try:
         res = telnyx.Message.create(
             from_=TELNYX_NUM,
@@ -95,6 +115,7 @@ def send_sms(to_number, message):
         print("✅ Telnyx send response:", res.to_dict())
     except Exception as e:
         print("❌ send_sms error:", e)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
