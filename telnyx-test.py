@@ -82,10 +82,6 @@ def sms_handler():
 
 
 def send_sms(to_number, message):
-    print("🧠 send_sms() called")
-    print("📞 To:", to_number)
-    print("💬 Message:", message)
-
     if not TELNYX_KEY or not TELNYX_NUM:
         print("❌ Missing TELNYX credentials")
         return
