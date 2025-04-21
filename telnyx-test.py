@@ -2,10 +2,12 @@ from flask import Flask, request
 import os
 from openai import OpenAI
 import telnyx
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 telnyx.api_key = os.getenv("TELNYX_API_KEY")
+load_dotenv()
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
@@ -13,12 +15,14 @@ def home():
 
 @app.route("/sms-handler", methods=["POST"])
 def sms_handler():
+    print("📩 RAW BODY:", request.data)
+    print("📩 HEADERS:", dict(request.headers))
     try:
-        data = request.get_json(force=True, silent=False)
-        print("📨 Raw payload received:", data)
+        data = request.get_json(force=True)
+        print("📨 Parsed JSON:", data)
     except Exception as e:
-        print("❌ Failed to parse JSON:", str(e))
-        return "Invalid JSON", 400
+        print("❌ JSON parse failed:", e)
+        return "Bad JSON", 400
 
     payload = data.get("data", {}).get("payload", {})
     incoming_message = payload.get("text")
