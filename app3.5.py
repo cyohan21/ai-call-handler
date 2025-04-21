@@ -32,7 +32,7 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("google-credentials.json", scope)
         gclient = gspread.authorize(creds)
-        sheet_file = gclient.open("AI Logs Tracker")
+        sheet_file = gclient.open("AI Conversation Logs")
 
         # Determine current month sheet name
         month_name = datetime.now().strftime("%B %Y")
@@ -42,6 +42,8 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
         except gspread.exceptions.WorksheetNotFound:
             sheet = sheet_file.add_worksheet(title=month_name, rows="1000", cols="4")
             sheet.append_row(["Date/Time", "Source", "Username/Handle", "Conversation"])
+        print("🔍 Connected to sheet:", sheet.title)
+        print("🔍 Headers found:", sheet.row_values(1))
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         convo_entry = f"[{now}] User: {user_msg}\n[{now}] AI: {ai_reply}\n"
