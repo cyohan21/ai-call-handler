@@ -5,6 +5,10 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+@app.route("/", methods=["GET", "HEAD"])
+def home():
+    return "Altura AI Assistant is live.", 200
+
 @app.route("/sms-handler", methods=["POST"])
 def sms_handler():
     incoming_message = request.form.get("text", "")
