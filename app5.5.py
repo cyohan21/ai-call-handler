@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, Response
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
-from twilio.twiml.voice_response import VoiceResponse
+from twilio.twiml.voice_response import VoiceResponse, Dial, Connect
 from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime
@@ -88,6 +88,17 @@ def log_to_sheet(platform, handle, user_msg, ai_reply):
     except Exception as e:
         print("❌ Error logging to Google Sheets:", e)
 
+@app.route("/incoming-call", methods=["POST"])
+def incoming_call():
+    resp = VoiceResponse()
+    resp.say("Please wait while we connect you to our assistant.")
+    # after 20 seconds of no media / failure, Twilio will POST to /missed-call
+    dial = Dial(action="/missed-call", timeout=20)  
+    connect = Connect()
+    connect.stream(url=f"wss://{request.url.hostname}/media-stream")
+    dial.append(connect)
+    resp.append(dial)
+    return Response(str(resp), mimetype="application/xml")
 
 @app.route("/missed-call", methods=["POST"])
 def missed_call():
